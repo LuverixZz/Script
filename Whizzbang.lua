@@ -55,6 +55,27 @@ env.ZystrixUI_NoDemo = true
 
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/LuverixZz/Zystrix/refs/heads/main/ZystrixUI.lua"))()
 
+local function i8(name)
+    return "https://img.icons8.com/ios-glyphs/60/ffffff/" .. name .. ".png"
+end
+
+Library:RegisterIcon("target",     i8("target"),         "T")
+Library:RegisterIcon("radar",      i8("radar"),          "R")
+Library:RegisterIcon("cursor",     i8("cursor"),         "C")
+Library:RegisterIcon("binoculars", i8("binoculars"),     "B")
+Library:RegisterIcon("crosshair",  i8("crosshair"),      "+")
+Library:RegisterIcon("walking",    i8("walking"),        "W")
+Library:RegisterIcon("ruler",      i8("ruler"),          "=")
+Library:RegisterIcon("sun",        i8("sun"),            "O")
+Library:RegisterIcon("toolbox",    i8("toolbox"),        "X")
+Library:RegisterIcon("wrench",     i8("wrench"),         "w")
+Library:RegisterIcon("pin",        i8("pin"),            "P")
+Library:RegisterIcon("bolt",       i8("lightning-bolt"), "!")
+Library:RegisterIcon("broom",      i8("broom"),          "b")
+Library:RegisterIcon("download",   i8("download"),       "D")
+Library:RegisterIcon("undo",       i8("undo"),           "U")
+Library:RegisterIcon("shutdown",   i8("shutdown"),       "Q")
+
 local LP                     = game:GetService("Players").LocalPlayer
 local RS                     = game:GetService("RunService")
 local RP                     = game:GetService("ReplicatedStorage")
@@ -73,6 +94,12 @@ local HUD_BUTTON_SFX_ID    = "rbxassetid://6895079853"
 local HUD_BUTTON_SFX_PITCH = 1.45
 local HUD_BUTTON_SFX_VOL   = 0.9
 
+local HasFS = (writefile and readfile and isfile and isfolder and makefolder) and true or false
+
+local function ensureFolder(path)
+    if HasFS and not isfolder(path) then pcall(makefolder, path) end
+end
+
 local WhizConfig = {
     EspActive          = false,
     SilentAim          = false,
@@ -83,9 +110,9 @@ local WhizConfig = {
     CustomSpeedEnabled = false,
     WalkSpeed          = 16,
     CrosshairVisible   = false,
-    CrosshairStyle     = "Purple Plus",
-    CrosshairColor     = Color3.fromRGB(150, 0, 255),
-    BoxColor           = Color3.fromRGB(0, 255, 255),
+    CrosshairStyle     = "Plus",
+    CrosshairColor     = Color3.fromRGB(255, 255, 255),
+    BoxColor           = Color3.fromRGB(255, 255, 255),
     DogtagEsp          = false,
     Fullbright         = false,
     NoFog              = false,
@@ -99,13 +126,13 @@ local WhizConfig = {
     UiLocked           = false,
 }
 
-local CROSSHAIR_COLOR_NAMES = { "Purple", "Red", "Green", "Cyan", "White", "Yellow", "Orange", "Pink", "Blue" }
+local CROSSHAIR_COLOR_NAMES = { "White", "Gray", "Red", "Green", "Cyan", "Yellow", "Orange", "Pink", "Blue" }
 local CROSSHAIR_COLORS = {
-    Purple = Color3.fromRGB(150, 0, 255),
+    White  = Color3.fromRGB(255, 255, 255),
+    Gray   = Color3.fromRGB(160, 160, 160),
     Red    = Color3.fromRGB(255, 40, 40),
     Green  = Color3.fromRGB(40, 255, 90),
     Cyan   = Color3.fromRGB(0, 255, 255),
-    White  = Color3.fromRGB(255, 255, 255),
     Yellow = Color3.fromRGB(255, 235, 0),
     Orange = Color3.fromRGB(255, 140, 0),
     Pink   = Color3.fromRGB(255, 105, 200),
@@ -200,6 +227,11 @@ pcall(function()
     end
 end)
 pcall(function()
+    if _G.HudButtonConns then
+        for _, conn in ipairs(_G.HudButtonConns) do pcall(function() conn:Disconnect() end) end
+    end
+end)
+pcall(function()
     local old = LP.PlayerGui:FindFirstChild("WhizEnemyHUD")
     if old then old:Destroy() end
 end)
@@ -219,6 +251,7 @@ _G.DogtagEspConns = {}
 _G.EnemyHudConns = {}
 _G.WoundedEspConns = {}
 _G.DecryptedEspConns = {}
+_G.HudButtonConns = {}
 
 local DraggableRegistry = {}
 
@@ -272,7 +305,7 @@ task.spawn(function()
     end)
 end)
 
-Library:SetTheme("Violet")
+Library:SetTheme("Monochrome")
 
 local Window = Library:CreateWindow({
     Title        = "WHIZZBANG",
@@ -527,7 +560,7 @@ local function buildCrosshair(style)
     clearCrosshairElements()
     local color = WhizConfig.CrosshairColor
 
-    if style == "Purple Plus" then
+    if style == "Plus" then
         makeFrame({ Size = UDim2.new(0, 2, 0, 16), Position = UDim2.new(0.5, 0, 0.5, -8), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 0) })
         makeFrame({ Size = UDim2.new(0, 2, 0, 16), Position = UDim2.new(0.5, 0, 0.5, 8), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 1) })
         makeFrame({ Size = UDim2.new(0, 16, 0, 2), Position = UDim2.new(0.5, -8, 0.5, 0), BackgroundColor3 = color, AnchorPoint = Vector2.new(0, 0.5) })
@@ -608,7 +641,7 @@ end
 
 local HUD_OPACITY = 0.30
 
-local function createPurpleButtonHUD(config)
+local function createHudButton(config)
     local gui = Instance.new("ScreenGui")
     gui.Name = config.guiName
     gui.ResetOnSpawn = false
@@ -620,7 +653,7 @@ local function createPurpleButtonHUD(config)
     frame.Name = config.frameName
     frame.Size = config.size or UDim2.new(0, 92, 0, 34)
     frame.Position = config.position or UDim2.new(0, 30, 0, 240)
-    frame.BackgroundColor3 = Color3.fromRGB(14, 6, 26)
+    frame.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
     frame.BackgroundTransparency = HUD_OPACITY
     frame.BorderSizePixel = 0
     frame.Active = true
@@ -628,9 +661,9 @@ local function createPurpleButtonHUD(config)
 
     local bgGrad = Instance.new("UIGradient")
     bgGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(38, 16, 68)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(22, 9, 40)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 5, 24)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(44, 44, 44)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(24, 24, 24)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 12, 12)),
     })
     bgGrad.Rotation = 125
     bgGrad.Parent = frame
@@ -639,15 +672,15 @@ local function createPurpleButtonHUD(config)
 
     local glow = Instance.new("UIStroke")
     glow.Thickness = 1.2
-    glow.Color = Color3.fromRGB(170, 70, 255)
+    glow.Color = Color3.fromRGB(220, 220, 220)
     glow.Transparency = HUD_OPACITY + 0.15
     glow.Parent = frame
 
     local strokeGrad = Instance.new("UIGradient")
     strokeGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(225, 130, 255)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 60, 230)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(95, 30, 185)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(170, 170, 170)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(90, 90, 90)),
     })
     strokeGrad.Rotation = 45
     strokeGrad.Parent = glow
@@ -663,7 +696,7 @@ local function createPurpleButtonHUD(config)
     local accent = Instance.new("Frame")
     accent.Size = UDim2.new(0, 2, 0, 22)
     accent.Position = UDim2.new(0, 6, 0, 6)
-    accent.BackgroundColor3 = Color3.fromRGB(190, 100, 255)
+    accent.BackgroundColor3 = Color3.fromRGB(236, 236, 236)
     accent.BackgroundTransparency = HUD_OPACITY
     accent.BorderSizePixel = 0
     accent.Parent = frame
@@ -677,14 +710,14 @@ local function createPurpleButtonHUD(config)
     btn.Text = config.text or "ACTION"
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 11
-    btn.TextColor3 = Color3.fromRGB(230, 200, 255)
+    btn.TextColor3 = Color3.fromRGB(240, 240, 240)
     btn.TextTransparency = HUD_OPACITY
     btn.AutoButtonColor = false
     btn.Parent = frame
 
     local hover = Instance.new("Frame")
     hover.Size = UDim2.new(1, 0, 1, 0)
-    hover.BackgroundColor3 = Color3.fromRGB(120, 60, 200)
+    hover.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
     hover.BackgroundTransparency = 1
     hover.BorderSizePixel = 0
     hover.ZIndex = 0
@@ -711,7 +744,7 @@ local function createPurpleButtonHUD(config)
         end
     end)
 
-    UserInputService.InputChanged:Connect(function(input)
+    local moveConn = UserInputService.InputChanged:Connect(function(input)
         if WhizConfig.UiLocked then dragging = false end
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
             or input.UserInputType == Enum.UserInputType.Touch) then
@@ -722,6 +755,7 @@ local function createPurpleButtonHUD(config)
             )
         end
     end)
+    table.insert(_G.HudButtonConns, moveConn)
 
     btn.MouseEnter:Connect(function()
         TweenService:Create(hover, TweenInfo.new(0.15), { BackgroundTransparency = 0.7 }):Play()
@@ -744,7 +778,14 @@ local function createPurpleButtonHUD(config)
     end)
 
     registerDraggable(frame)
-    return { gui = gui, frame = frame, btn = btn }
+
+    local handle = { gui = gui, frame = frame, btn = btn }
+    function handle.destroy()
+        pcall(function() moveConn:Disconnect() end)
+        DraggableRegistry[frame] = nil
+        pcall(function() gui:Destroy() end)
+    end
+    return handle
 end
 
 local WOUNDED_HOLD_TIME = 2.0
@@ -1245,7 +1286,7 @@ local function createEnemyHud()
     enemyFrame = Instance.new("Frame")
     enemyFrame.Size = UDim2.new(0, 180, 0, 74)
     enemyFrame.Position = UDim2.new(0, 30, 0, 130)
-    enemyFrame.BackgroundColor3 = Color3.fromRGB(14, 6, 26)
+    enemyFrame.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
     enemyFrame.BackgroundTransparency = HUD_OPACITY
     enemyFrame.BorderSizePixel = 0
     enemyFrame.Active = true
@@ -1253,9 +1294,9 @@ local function createEnemyHud()
 
     local bgGrad = Instance.new("UIGradient")
     bgGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(38, 16, 68)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(22, 9, 40)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 5, 24)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(44, 44, 44)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(24, 24, 24)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 12, 12)),
     })
     bgGrad.Rotation = 125
     bgGrad.Parent = enemyFrame
@@ -1264,7 +1305,7 @@ local function createEnemyHud()
 
     local glow = Instance.new("UIStroke")
     glow.Thickness = 1.2
-    glow.Color = Color3.fromRGB(170, 70, 255)
+    glow.Color = Color3.fromRGB(220, 220, 220)
     glow.Transparency = HUD_OPACITY + 0.15
     glow.Parent = enemyFrame
 
@@ -1279,7 +1320,7 @@ local function createEnemyHud()
     local accent = Instance.new("Frame")
     accent.Size = UDim2.new(0, 2, 0, 30)
     accent.Position = UDim2.new(0, 7, 0, 8)
-    accent.BackgroundColor3 = Color3.fromRGB(190, 100, 255)
+    accent.BackgroundColor3 = Color3.fromRGB(236, 236, 236)
     accent.BackgroundTransparency = HUD_OPACITY
     accent.BorderSizePixel = 0
     accent.Parent = enemyFrame
@@ -1292,7 +1333,7 @@ local function createEnemyHud()
     header.Text = "ENEMIES ALIVE"
     header.Font = Enum.Font.GothamBold
     header.TextSize = 9
-    header.TextColor3 = Color3.fromRGB(215, 175, 255)
+    header.TextColor3 = Color3.fromRGB(190, 190, 190)
     header.TextTransparency = HUD_OPACITY
     header.TextXAlignment = Enum.TextXAlignment.Left
     header.Parent = enemyFrame
@@ -1316,7 +1357,7 @@ local function createEnemyHud()
     enemyBreakdown.Text = "Tank 0 | Flame 0 | Inf 0 | Other 0"
     enemyBreakdown.Font = Enum.Font.GothamMedium
     enemyBreakdown.TextSize = 9
-    enemyBreakdown.TextColor3 = Color3.fromRGB(200, 175, 235)
+    enemyBreakdown.TextColor3 = Color3.fromRGB(160, 160, 160)
     enemyBreakdown.TextTransparency = HUD_OPACITY
     enemyBreakdown.TextXAlignment = Enum.TextXAlignment.Left
     enemyBreakdown.Parent = enemyFrame
@@ -1653,13 +1694,14 @@ local function UniversalReload()
     end)
 end
 
-local MainTab   = Window:AddTab({ Name = "Combat Ops",      Icon = "crown",    Group = "MENU", Description = "Aim assist and interaction tools." })
-local VisualTab = Window:AddTab({ Name = "Visual Engine",   Icon = "eye",      Group = "MENU", Description = "ESP, crosshair and live enemy counter." })
-local WorldTab  = Window:AddTab({ Name = "Environment",     Icon = "globe",    Group = "MENU", Description = "Movement, lighting and performance options." })
-local ExtraTab  = Window:AddTab({ Name = "Extra Utilities", Icon = "farm",     Group = "MENU", Description = "Cleaning, reload buttons and HUD lock." })
+local MainTab   = Window:AddTab({ Name = "Combat Ops",      Icon = "target",  Group = "MENU",    Description = "Aim assist and interaction tools." })
+local VisualTab = Window:AddTab({ Name = "Visual Engine",   Icon = "eye",     Group = "MENU",    Description = "ESP, crosshair and live enemy counter." })
+local WorldTab  = Window:AddTab({ Name = "Environment",     Icon = "globe",   Group = "MENU",    Description = "Movement, lighting and performance options." })
+local ExtraTab  = Window:AddTab({ Name = "Extra Utilities", Icon = "toolbox", Group = "MENU",    Description = "Cleaning, on-screen buttons and HUD lock." })
+local ConfigTab = Window:AddTab({ Name = "Settings",        Icon = "settings", Group = "ACCOUNT", Description = "Appearance, keybinds and configuration." })
 
-local AimSection    = MainTab:AddSection({ Name = "Silent Aim", Side = "Left" })
-local PromptSection = MainTab:AddSection({ Name = "Interaction", Side = "Right" })
+local AimSection    = MainTab:AddSection({ Name = "Silent Aim",   Icon = "radar",  Side = "Left" })
+local PromptSection = MainTab:AddSection({ Name = "Interaction",  Icon = "cursor", Side = "Right" })
 
 AimSection:AddToggle({
     Name    = "Silent Aim (Thin & Smooth)",
@@ -1684,7 +1726,6 @@ AimSection:AddToggle({
                     local viewport = Camera.ViewportSize
                     local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
                     Circle.Position = center
-                    Circle.Color    = Color3.fromHSV(tick() % 5 / 5, 0.8, 1)
                     Circle.Radius   = WhizConfig.AimbotFOV
 
                     local bestPart = nil
@@ -1763,8 +1804,8 @@ PromptSection:AddToggle({
     end,
 })
 
-local EspSection   = VisualTab:AddSection({ Name = "ESP", Side = "Left" })
-local CrossSection = VisualTab:AddSection({ Name = "Crosshair", Side = "Right" })
+local EspSection   = VisualTab:AddSection({ Name = "ESP",       Icon = "binoculars", Side = "Left" })
+local CrossSection = VisualTab:AddSection({ Name = "Crosshair", Icon = "crosshair",  Side = "Right" })
 
 EspSection:AddToggle({
     Name    = "NPC Tracker (Box ESP)",
@@ -1833,10 +1874,10 @@ CrossSection:AddToggle({
 CrossSection:AddDropdown({
     Name      = "Crosshair Style",
     Options   = {
-        "Purple Plus", "Dot", "Hollow Circle", "Cross (Full)", "Open Plus",
+        "Plus", "Dot", "Hollow Circle", "Cross (Full)", "Open Plus",
         "T-Shape", "X Shape", "Dot + Ring", "Square", "Chevron",
     },
-    Default   = "Purple Plus",
+    Default   = "Plus",
     AllowNone = false,
     Flag      = "CrosshairStyle",
     Callback  = function(selected)
@@ -1851,7 +1892,7 @@ CrossSection:AddDropdown({
 CrossSection:AddDropdown({
     Name      = "Crosshair Color",
     Options   = CROSSHAIR_COLOR_NAMES,
-    Default   = "Purple",
+    Default   = "White",
     AllowNone = false,
     Flag      = "CrosshairColor",
     Callback  = function(name)
@@ -1862,9 +1903,9 @@ CrossSection:AddDropdown({
     end,
 })
 
-local MoveSection   = WorldTab:AddSection({ Name = "Movement", Side = "Left" })
-local RenderSection = WorldTab:AddSection({ Name = "Render Distance", Side = "Left" })
-local LightSection  = WorldTab:AddSection({ Name = "Lighting & Graphics", Side = "Right" })
+local MoveSection   = WorldTab:AddSection({ Name = "Movement",            Icon = "walking", Side = "Left" })
+local RenderSection = WorldTab:AddSection({ Name = "Render Distance",     Icon = "ruler",   Side = "Left" })
+local LightSection  = WorldTab:AddSection({ Name = "Lighting & Graphics", Icon = "sun",     Side = "Right" })
 
 MoveSection:AddSlider({
     Name      = "Custom Speed Value",
@@ -1889,6 +1930,26 @@ MoveSection:AddToggle({
                 end
             end)
         end
+    end,
+})
+
+RenderSection:AddSlider({
+    Name      = "Render Distance (Studs)",
+    Min       = 100,
+    Max       = 5000,
+    Default   = 500,
+    Increment = 50,
+    Flag      = "RenderStuds",
+    Callback  = function(n) WhizConfig.RenderDistanceStuds = n end,
+})
+
+RenderSection:AddToggle({
+    Name    = "Enable Render Distance",
+    Default = false,
+    Flag    = "RenderEnabled",
+    Callback = function(v)
+        WhizConfig.RenderDistanceOn = v
+        if v then startRenderDistance() else stopRenderDistance() end
     end,
 })
 
@@ -1922,28 +1983,8 @@ LightSection:AddToggle({
     end,
 })
 
-RenderSection:AddSlider({
-    Name      = "Render Distance (Studs)",
-    Min       = 100,
-    Max       = 5000,
-    Default   = 500,
-    Increment = 50,
-    Flag      = "RenderStuds",
-    Callback  = function(n) WhizConfig.RenderDistanceStuds = n end,
-})
-
-RenderSection:AddToggle({
-    Name    = "Enable Render Distance",
-    Default = false,
-    Flag    = "RenderEnabled",
-    Callback = function(v)
-        WhizConfig.RenderDistanceOn = v
-        if v then startRenderDistance() else stopRenderDistance() end
-    end,
-})
-
-local UtilSection = ExtraTab:AddSection({ Name = "Utilities", Side = "Left" })
-local HudSection  = ExtraTab:AddSection({ Name = "HUD Buttons", Side = "Right" })
+local UtilSection = ExtraTab:AddSection({ Name = "Utilities",         Icon = "wrench", Side = "Left" })
+local HudSection  = ExtraTab:AddSection({ Name = "On-Screen Buttons", Icon = "pin",    Side = "Right" })
 
 UtilSection:AddToggle({
     Name    = "Auto-Clean Dirt (Loop)",
@@ -1962,7 +2003,62 @@ UtilSection:AddToggle({
     end,
 })
 
-UtilSection:AddToggle({
+local reloadHud = nil
+local cleanHud  = nil
+
+HudSection:AddToggle({
+    Name    = "Reload Button",
+    Default = false,
+    Flag    = "ReloadButton",
+    Callback = function(v)
+        if v then
+            if reloadHud then return end
+            reloadHud = createHudButton({
+                guiName   = "WhizReloadHUD",
+                frameName = "ReloadFrame",
+                text      = "RELOAD",
+                position  = UDim2.new(0, 30, 0, 220),
+                size      = UDim2.new(0, 92, 0, 34),
+                onClick   = function()
+                    UniversalReload()
+                end,
+            })
+        else
+            if reloadHud then
+                reloadHud.destroy()
+                reloadHud = nil
+            end
+        end
+    end,
+})
+
+HudSection:AddToggle({
+    Name    = "Clean Button",
+    Default = false,
+    Flag    = "CleanButton",
+    Callback = function(v)
+        if v then
+            if cleanHud then return end
+            cleanHud = createHudButton({
+                guiName   = "WhizCleanHUD",
+                frameName = "CleanFrame",
+                text      = "CLEAN",
+                position  = UDim2.new(0, 30, 0, 262),
+                size      = UDim2.new(0, 92, 0, 34),
+                onClick   = function()
+                    pcall(function() RP.wipedirt:FireServer() end)
+                end,
+            })
+        else
+            if cleanHud then
+                cleanHud.destroy()
+                cleanHud = nil
+            end
+        end
+    end,
+})
+
+HudSection:AddToggle({
     Name    = "Lock HUD Position",
     Default = false,
     Flag    = "UiLocked",
@@ -1973,44 +2069,165 @@ UtilSection:AddToggle({
 })
 
 HudSection:AddButton({
-    Name       = "Instant Reload",
-    Icon       = "refresh",
-    ButtonText = "Spawn",
+    Name       = "Fire Reload Now",
+    Icon       = "bolt",
+    ButtonText = "Run",
     Callback   = function()
-        if LP.PlayerGui:FindFirstChild("WhizReloadHUD") then return end
-        createPurpleButtonHUD({
-            guiName   = "WhizReloadHUD",
-            frameName = "ReloadFrame",
-            text      = "RELOAD",
-            position  = UDim2.new(0, 30, 0, 220),
-            size      = UDim2.new(0, 92, 0, 34),
-            onClick   = function()
-                UniversalReload()
-            end,
-        })
+        UniversalReload()
     end,
 })
 
 HudSection:AddButton({
-    Name       = "Clean Button (Manual)",
-    Icon       = "trash",
-    ButtonText = "Spawn",
+    Name       = "Fire Clean Now",
+    Icon       = "broom",
+    ButtonText = "Run",
     Callback   = function()
-        if LP.PlayerGui:FindFirstChild("WhizCleanHUD") then return end
-        createPurpleButtonHUD({
-            guiName   = "WhizCleanHUD",
-            frameName = "CleanFrame",
-            text      = "CLEAN",
-            position  = UDim2.new(0, 30, 0, 264),
-            size      = UDim2.new(0, 92, 0, 34),
-            onClick   = function()
-                pcall(function() RP.wipedirt:FireServer() end)
-            end,
-        })
+        pcall(function() RP.wipedirt:FireServer() end)
     end,
 })
 
-Window:CreateSettingsTab({ Group = "ACCOUNT" })
+local AppearanceSection = ConfigTab:AddSection({ Name = "Appearance", Icon = "palette",  Side = "Left" })
+local KeybindSection    = ConfigTab:AddSection({ Name = "Keybinds",   Icon = "keyboard", Side = "Left" })
+local SaveSection       = ConfigTab:AddSection({ Name = "Config",     Icon = "folder",   Side = "Right" })
+
+AppearanceSection:AddSlider({
+    Name      = "Transparency",
+    Min       = 0,
+    Max       = 0.8,
+    Increment = 0.01,
+    Default   = Library.Transparency,
+    Flag      = "UI_Transparency",
+    Callback  = function(v) Library:SetTransparency(v) end,
+})
+
+AppearanceSection:AddToggle({
+    Name    = "Show User",
+    Default = true,
+    Flag    = "UI_ShowUser",
+    Callback = function(v) Window:SetUserVisible(v) end,
+})
+
+AppearanceSection:AddToggle({
+    Name    = "Show FPS",
+    Default = false,
+    Flag    = "UI_ShowFPS",
+    Callback = function(v)
+        Window.ShowFPS = v
+        Window:_statsRefresh()
+    end,
+})
+
+AppearanceSection:AddToggle({
+    Name    = "Show Ping",
+    Default = false,
+    Flag    = "UI_ShowPing",
+    Callback = function(v)
+        Window.ShowPing = v
+        Window:_statsRefresh()
+    end,
+})
+
+KeybindSection:AddKeybind({
+    Name    = "Toggle UI",
+    Default = Window.ToggleKey,
+    Flag    = "UI_ToggleKey",
+    Changed = function(k)
+        if k then Window.ToggleKey = k end
+    end,
+})
+
+KeybindSection:AddButton({
+    Name       = "Unload UI",
+    Icon       = "shutdown",
+    ButtonText = "Unload",
+    Callback   = function()
+        Window:RequestClose()
+    end,
+})
+
+local configNameBox = SaveSection:AddTextbox({ Name = "Config Name", Placeholder = "MyConfig" })
+local configSelect
+
+local function refreshConfigList()
+    if configSelect then configSelect:Refresh(Library:ListConfigs()) end
+end
+
+configSelect = SaveSection:AddDropdown({
+    Name        = "Select Config",
+    Options     = Library:ListConfigs(),
+    Placeholder = "No configs...",
+})
+
+SaveSection:AddButton({
+    Name       = "Save Config",
+    Icon       = "save",
+    ButtonText = "Save",
+    Callback   = function()
+        local ok, name = Library:SaveConfig(configNameBox:Get())
+        if ok then
+            Library:Notify({ Title = "Config", Content = "Saved: " .. name, Icon = "save" })
+            refreshConfigList()
+        else
+            Library:Notify({ Title = "Config", Content = HasFS and "Config name is empty." or "Your executor does not support writefile.", Icon = "info" })
+        end
+    end,
+})
+
+SaveSection:AddButton({
+    Name       = "Load Selected",
+    Icon       = "download",
+    ButtonText = "Load",
+    Callback   = function()
+        if configSelect.Value and Library:LoadConfig(configSelect.Value) then
+            Library:Notify({ Title = "Config", Content = "Loaded: " .. configSelect.Value, Icon = "download" })
+        end
+    end,
+})
+
+SaveSection:AddButton({
+    Name       = "Load Last Used",
+    Icon       = "undo",
+    ButtonText = "Load",
+    Callback   = function()
+        if HasFS and isfile(Library.ConfigFolder .. "/last.txt") then
+            Library:LoadConfig(readfile(Library.ConfigFolder .. "/last.txt"))
+        end
+    end,
+})
+
+SaveSection:AddButton({
+    Name       = "Refresh List",
+    Icon       = "refresh",
+    ButtonText = "Refresh",
+    Callback   = refreshConfigList,
+})
+
+SaveSection:AddButton({
+    Name       = "Delete Selected",
+    Icon       = "trash",
+    ButtonText = "Delete",
+    Callback   = function()
+        if configSelect.Value and HasFS and delfile then
+            pcall(delfile, Library.ConfigFolder .. "/configs/" .. configSelect.Value .. ".json")
+            configSelect:Set(nil, true)
+            refreshConfigList()
+        end
+    end,
+})
+
+local autoLoadOn = HasFS and isfile(Library.ConfigFolder .. "/autoload.txt") and readfile(Library.ConfigFolder .. "/autoload.txt") == "1"
+
+SaveSection:AddToggle({
+    Name    = "Enable Auto Load",
+    Default = autoLoadOn,
+    Callback = function(v)
+        if HasFS then
+            ensureFolder("ZystrixUI")
+            ensureFolder(Library.ConfigFolder)
+            pcall(writefile, Library.ConfigFolder .. "/autoload.txt", v and "1" or "0")
+        end
+    end,
+})
 
 task.spawn(function()
     while true do
