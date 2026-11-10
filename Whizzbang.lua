@@ -1,0 +1,2085 @@
+if game.PlaceId ~= 14234703115 then
+    local TeleportService = game:GetService("TeleportService")
+    local HttpService     = game:GetService("HttpService")
+    local StarterGui      = game:GetService("StarterGui")
+    local LP_LOCK         = game:GetService("Players").LocalPlayer
+
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title    = "WHIZZBANG",
+            Text     = "Wrong game fam",
+            Duration = 3,
+        })
+    end)
+
+    pcall(function()
+        LP_LOCK:Kick("Wrong game fam")
+    end)
+
+    task.spawn(function()
+        local bestJobId   = nil
+        local bestCount   = -1
+
+        pcall(function()
+            local url = "https://games.roblox.com/v1/games/14234703115/servers/Public?sortOrder=Desc&limit=100"
+            local raw = game:HttpGet(url)
+            local data = HttpService:JSONDecode(raw)
+            if data and data.data then
+                for _, srv in ipairs(data.data) do
+                    if type(srv) == "table" and type(srv.playing) == "number" and type(srv.id) == "string" and srv.playing > bestCount then
+                        bestCount = srv.playing
+                        bestJobId = srv.id
+                    end
+                end
+            end
+        end)
+
+        task.wait(1.3)
+
+        if bestJobId then
+            pcall(function()
+                TeleportService:TeleportToPlaceInstance(14234703115, bestJobId, LP_LOCK)
+            end)
+        else
+            pcall(function()
+                TeleportService:Teleport(14234703115, LP_LOCK)
+            end)
+        end
+    end)
+
+    return
+end
+
+local env = (getgenv and getgenv()) or _G
+env.ZystrixUI_NoDemo = true
+
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/LuverixZz/Zystrix/refs/heads/main/ZystrixUI.lua"))()
+
+local LP                     = game:GetService("Players").LocalPlayer
+local RS                     = game:GetService("RunService")
+local RP                     = game:GetService("ReplicatedStorage")
+local Camera                 = workspace.CurrentCamera
+local Lighting               = game:GetService("Lighting")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local UserInputService       = game:GetService("UserInputService")
+local TweenService           = game:GetService("TweenService")
+local Players                = game:GetService("Players")
+local SoundService           = game:GetService("SoundService")
+
+local WOUNDED_TEXTURE_ID = "rbxassetid://10797750927"
+local WOUNDED_ICON_SIZE  = UDim2.new(0, 24, 0, 24)
+
+local HUD_BUTTON_SFX_ID    = "rbxassetid://6895079853"
+local HUD_BUTTON_SFX_PITCH = 1.45
+local HUD_BUTTON_SFX_VOL   = 0.9
+
+local WhizConfig = {
+    EspActive          = false,
+    SilentAim          = false,
+    AimbotLoaded       = false,
+    AimbotFOV          = 150,
+    AimbotPart         = "Head",
+    AutoClean          = false,
+    CustomSpeedEnabled = false,
+    WalkSpeed          = 16,
+    CrosshairVisible   = false,
+    CrosshairStyle     = "Purple Plus",
+    CrosshairColor     = Color3.fromRGB(150, 0, 255),
+    BoxColor           = Color3.fromRGB(0, 255, 255),
+    DogtagEsp          = false,
+    Fullbright         = false,
+    NoFog              = false,
+    NoLag              = false,
+    RenderDistanceOn   = false,
+    RenderDistanceStuds= 500,
+    InstantPrompt      = false,
+    EnemyCountHud      = false,
+    WoundedEsp         = false,
+    DecryptedEsp       = false,
+    UiLocked           = false,
+}
+
+local CROSSHAIR_COLOR_NAMES = { "Purple", "Red", "Green", "Cyan", "White", "Yellow", "Orange", "Pink", "Blue" }
+local CROSSHAIR_COLORS = {
+    Purple = Color3.fromRGB(150, 0, 255),
+    Red    = Color3.fromRGB(255, 40, 40),
+    Green  = Color3.fromRGB(40, 255, 90),
+    Cyan   = Color3.fromRGB(0, 255, 255),
+    White  = Color3.fromRGB(255, 255, 255),
+    Yellow = Color3.fromRGB(255, 235, 0),
+    Orange = Color3.fromRGB(255, 140, 0),
+    Pink   = Color3.fromRGB(255, 105, 200),
+    Blue   = Color3.fromRGB(50, 120, 255),
+}
+
+local TARGET_PART_RESOLVERS = {
+    ["Head"]  = function(model)
+        return model:FindFirstChild("Head")
+    end,
+    ["Torso"] = function(model)
+        return model:FindFirstChild("Torso")
+            or model:FindFirstChild("UpperTorso")
+            or model:FindFirstChild("LowerTorso")
+            or model:FindFirstChild("HumanoidRootPart")
+    end,
+    ["Leg"]   = function(model)
+        return model:FindFirstChild("Left Leg")
+            or model:FindFirstChild("Right Leg")
+            or model:FindFirstChild("LeftUpperLeg")
+            or model:FindFirstChild("RightUpperLeg")
+            or model:FindFirstChild("LeftLowerLeg")
+            or model:FindFirstChild("RightLowerLeg")
+            or model:FindFirstChild("LeftLeg")
+            or model:FindFirstChild("RightLeg")
+    end,
+    ["Arms"]  = function(model)
+        return model:FindFirstChild("Left Arm")
+            or model:FindFirstChild("Right Arm")
+            or model:FindFirstChild("LeftUpperArm")
+            or model:FindFirstChild("RightUpperArm")
+            or model:FindFirstChild("LeftLowerArm")
+            or model:FindFirstChild("RightLowerArm")
+    end,
+    ["HumanoidRootPart"] = function(model) return model:FindFirstChild("HumanoidRootPart") end,
+    ["Closest"] = nil,
+}
+
+local function getTargetPart(model, viewportCenter)
+    if not model or not model.Parent then return nil end
+    local choice = WhizConfig.AimbotPart
+    local resolver = TARGET_PART_RESOLVERS[choice]
+
+    if choice == "Closest" then
+        local bestPart, bestDist = nil, math.huge
+        for _, part in ipairs(model:GetChildren()) do
+            if part:IsA("BasePart") then
+                local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local d = (Vector2.new(pos.X, pos.Y) - viewportCenter).Magnitude
+                    if d < bestDist then
+                        bestDist = d
+                        bestPart = part
+                    end
+                end
+            end
+        end
+        return bestPart
+    end
+
+    if resolver then
+        local part = resolver(model)
+        if part then return part end
+    end
+
+    return model:FindFirstChild("Head")
+        or model:FindFirstChild("HumanoidRootPart")
+        or model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+pcall(function() if _G.AimbotConnection then _G.AimbotConnection:Disconnect() end end)
+pcall(function() if _G.FOVCircle then _G.FOVCircle:Remove() end end)
+pcall(function() if _G.InstantPromptConn then _G.InstantPromptConn:Disconnect() end end)
+pcall(function()
+    if _G.DogtagEspConns then
+        for _, conn in ipairs(_G.DogtagEspConns) do pcall(function() conn:Disconnect() end) end
+    end
+end)
+pcall(function()
+    if _G.EnemyHudConns then
+        for _, conn in ipairs(_G.EnemyHudConns) do pcall(function() conn:Disconnect() end) end
+    end
+end)
+pcall(function()
+    if _G.WoundedEspConns then
+        for _, conn in ipairs(_G.WoundedEspConns) do pcall(function() conn:Disconnect() end) end
+    end
+end)
+pcall(function()
+    if _G.DecryptedEspConns then
+        for _, conn in ipairs(_G.DecryptedEspConns) do pcall(function() conn:Disconnect() end) end
+    end
+end)
+pcall(function()
+    local old = LP.PlayerGui:FindFirstChild("WhizEnemyHUD")
+    if old then old:Destroy() end
+end)
+pcall(function()
+    local old = LP.PlayerGui:FindFirstChild("WhizReloadHUD")
+    if old then old:Destroy() end
+end)
+pcall(function()
+    local old = LP.PlayerGui:FindFirstChild("WhizCleanHUD")
+    if old then old:Destroy() end
+end)
+pcall(function()
+    local old = LP.PlayerGui:FindFirstChild("WhizCrosshair")
+    if old then old:Destroy() end
+end)
+_G.DogtagEspConns = {}
+_G.EnemyHudConns = {}
+_G.WoundedEspConns = {}
+_G.DecryptedEspConns = {}
+
+local DraggableRegistry = {}
+
+local function registerDraggable(frame)
+    DraggableRegistry[frame] = true
+    frame.Active = not WhizConfig.UiLocked
+    for _, child in ipairs(frame:GetDescendants()) do
+        if child:IsA("GuiObject") then
+            child.Active = not WhizConfig.UiLocked
+        end
+    end
+end
+
+local function applyLockState()
+    local locked = WhizConfig.UiLocked
+    for frame, _ in pairs(DraggableRegistry) do
+        if frame and frame.Parent then
+            frame.Active = not locked
+            for _, child in ipairs(frame:GetDescendants()) do
+                if child:IsA("GuiObject") then
+                    child.Active = not locked
+                end
+            end
+        end
+    end
+end
+
+local function playHudButtonSfx()
+    pcall(function()
+        local s = Instance.new("Sound")
+        s.SoundId        = HUD_BUTTON_SFX_ID
+        s.Volume         = HUD_BUTTON_SFX_VOL
+        s.PlaybackSpeed  = HUD_BUTTON_SFX_PITCH
+        s.Parent         = SoundService
+        s:Play()
+        task.delay(3, function()
+            pcall(function() s:Destroy() end)
+        end)
+    end)
+end
+
+local DEFAULT_SPEED = 16
+task.spawn(function()
+    pcall(function()
+        local char = LP.Character or LP.CharacterAdded:Wait()
+        local hum  = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
+        if hum then
+            DEFAULT_SPEED = hum.WalkSpeed
+            WhizConfig.WalkSpeed = DEFAULT_SPEED
+        end
+    end)
+end)
+
+Library:SetTheme("Violet")
+
+local Window = Library:CreateWindow({
+    Title        = "WHIZZBANG",
+    Subtitle     = "Universal clan",
+    Version      = "v1",
+    ConfigFolder = "Whizzbang",
+    ToggleKey    = Enum.KeyCode.J,
+})
+
+local lightingConnection = nil
+local originalLighting = nil
+
+local function takeLightingSnapshot()
+    if originalLighting then return end
+    originalLighting = {
+        Brightness = Lighting.Brightness,
+        ClockTime = Lighting.ClockTime,
+        Ambient = Lighting.Ambient,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        GlobalShadows = Lighting.GlobalShadows,
+        FogEnd = Lighting.FogEnd,
+        FogStart = Lighting.FogStart,
+        FogColor = Lighting.FogColor,
+        Atmos = {},
+        CC = {}
+    }
+    for _, obj in ipairs(Lighting:GetChildren()) do
+        if obj:IsA("Atmosphere") then
+            originalLighting.Atmos[obj] = {d = obj.Density, h = obj.Haze, g = obj.Glare}
+        elseif obj:IsA("ColorCorrectionEffect") then
+            originalLighting.CC[obj] = {b = obj.Brightness, c = obj.Contrast, t = obj.TintColor}
+        end
+    end
+end
+
+local function restoreLightingState()
+    if lightingConnection then
+        lightingConnection:Disconnect()
+        lightingConnection = nil
+    end
+    if not originalLighting then return end
+
+    pcall(function()
+        Lighting.Brightness = originalLighting.Brightness
+        Lighting.ClockTime = originalLighting.ClockTime
+        Lighting.Ambient = originalLighting.Ambient
+        Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+        Lighting.GlobalShadows = originalLighting.GlobalShadows
+        Lighting.FogEnd = originalLighting.FogEnd
+        Lighting.FogStart = originalLighting.FogStart
+        Lighting.FogColor = originalLighting.FogColor
+
+        for obj, data in pairs(originalLighting.Atmos) do
+            if obj and obj.Parent then
+                obj.Density = data.d; obj.Haze = data.h; obj.Glare = data.g
+            end
+        end
+        for obj, data in pairs(originalLighting.CC) do
+            if obj and obj.Parent then
+                obj.Brightness = data.b; obj.Contrast = data.c; obj.TintColor = data.t
+            end
+        end
+    end)
+    originalLighting = nil
+end
+
+local function updateLightingFeatures()
+    if not WhizConfig.Fullbright and not WhizConfig.NoFog then
+        restoreLightingState()
+        return
+    end
+
+    takeLightingSnapshot()
+
+    if lightingConnection then return end
+
+    lightingConnection = RS.Heartbeat:Connect(function()
+        pcall(function()
+            if WhizConfig.Fullbright then
+                Lighting.Brightness = 3
+                Lighting.ClockTime = 12
+                Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+                Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+                Lighting.GlobalShadows = false
+                for _, obj in ipairs(Lighting:GetChildren()) do
+                    if obj:IsA("Atmosphere") then
+                        obj.Density = 0; obj.Haze = 0; obj.Glare = 0
+                    elseif obj:IsA("ColorCorrectionEffect") then
+                        obj.Brightness = 0; obj.Contrast = 0; obj.TintColor = Color3.fromRGB(255,255,255)
+                    elseif obj:IsA("BlurEffect") then
+                        obj.Size = 0
+                    end
+                end
+            end
+
+            if WhizConfig.NoFog then
+                Lighting.FogEnd = 100000
+                Lighting.FogStart = 100000
+                Lighting.FogColor = Color3.fromRGB(255, 255, 255)
+                for _, obj in ipairs(Lighting:GetChildren()) do
+                    if obj:IsA("Atmosphere") then
+                        obj.Density = 0; obj.Haze = 0; obj.Glare = 0
+                    end
+                end
+            end
+        end)
+    end)
+end
+
+local noLagOriginalParticles = {}
+local noLagConn = nil
+
+local function toggleNoLag(state)
+    if state then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") or obj:IsA("Trail") or obj:IsA("Beam") then
+                if obj.Enabled then
+                    obj.Enabled = false
+                    table.insert(noLagOriginalParticles, obj)
+                end
+            end
+        end
+
+        pcall(function()
+            local UserSettings = UserSettings()
+            UserSettings.GameSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+        end)
+
+        if noLagConn then noLagConn:Disconnect() end
+        noLagConn = workspace.DescendantAdded:Connect(function(obj)
+            if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") or obj:IsA("Trail") or obj:IsA("Beam") then
+                if obj.Enabled then
+                    obj.Enabled = false
+                    table.insert(noLagOriginalParticles, obj)
+                end
+            end
+        end)
+
+        task.spawn(function()
+            while WhizConfig.NoLag do
+                pcall(function()
+                    Lighting.GlobalShadows = false
+                end)
+                task.wait(1)
+            end
+        end)
+    else
+        if noLagConn then
+            noLagConn:Disconnect()
+            noLagConn = nil
+        end
+
+        for _, obj in ipairs(noLagOriginalParticles) do
+            pcall(function()
+                if obj and obj.Parent then
+                    obj.Enabled = true
+                end
+            end)
+        end
+        noLagOriginalParticles = {}
+
+        pcall(function()
+            local UserSettings = UserSettings()
+            UserSettings.GameSettings.SavedQualityLevel = Enum.SavedQualitySetting.Automatic
+        end)
+    end
+end
+
+local renderDistanceThread = false
+
+local function startRenderDistance()
+    if renderDistanceThread then return end
+    renderDistanceThread = true
+
+    task.spawn(function()
+        while WhizConfig.RenderDistanceOn do
+            pcall(function()
+                if not LP.Character then return end
+                local root = LP.Character:FindFirstChild("HumanoidRootPart")
+                if not root then return end
+                local myPos = root.Position
+
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        if not obj:IsDescendantOf(LP.Character) and not obj:FindFirstAncestorOfClass("Tool") then
+                            local dist = (obj.Position - myPos).Magnitude
+                            if dist > WhizConfig.RenderDistanceStuds then
+                                obj.LocalTransparencyModifier = 1
+                            else
+                                obj.LocalTransparencyModifier = 0
+                            end
+                        end
+                    end
+                end
+            end)
+            task.wait(1.5)
+        end
+        renderDistanceThread = false
+    end)
+end
+
+local function stopRenderDistance()
+    renderDistanceThread = false
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.LocalTransparencyModifier = 0
+            end
+        end
+    end)
+end
+
+local CrossGui = Instance.new("ScreenGui")
+CrossGui.Name = "WhizCrosshair"
+CrossGui.ResetOnSpawn = false
+CrossGui.IgnoreGuiInset = true
+pcall(function() CrossGui.Parent = LP:WaitForChild("PlayerGui") end)
+
+local CrossHolder = Instance.new("Frame")
+CrossHolder.Name = "CrossHolder"
+CrossHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+CrossHolder.Position = UDim2.new(0.5, 0, 0.5, 0)
+CrossHolder.Size = UDim2.new(0, 60, 0, 60)
+CrossHolder.BackgroundTransparency = 1
+CrossHolder.Visible = false
+CrossHolder.Parent = CrossGui
+
+local crosshairElements = {}
+
+local function clearCrosshairElements()
+    for _, el in ipairs(crosshairElements) do
+        pcall(function() el:Destroy() end)
+    end
+    crosshairElements = {}
+end
+
+local function makeFrame(props)
+    local f = Instance.new("Frame")
+    f.BorderSizePixel = 0
+    f.BackgroundColor3 = WhizConfig.CrosshairColor
+    f.AnchorPoint = Vector2.new(0.5, 0.5)
+    f.Position = UDim2.new(0.5, 0, 0.5, 0)
+    for k, v in pairs(props or {}) do
+        f[k] = v
+    end
+    f.Parent = CrossHolder
+    table.insert(crosshairElements, f)
+    return f
+end
+
+local function buildCrosshair(style)
+    clearCrosshairElements()
+    local color = WhizConfig.CrosshairColor
+
+    if style == "Purple Plus" then
+        makeFrame({ Size = UDim2.new(0, 2, 0, 16), Position = UDim2.new(0.5, 0, 0.5, -8), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 0) })
+        makeFrame({ Size = UDim2.new(0, 2, 0, 16), Position = UDim2.new(0.5, 0, 0.5, 8), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 1) })
+        makeFrame({ Size = UDim2.new(0, 16, 0, 2), Position = UDim2.new(0.5, -8, 0.5, 0), BackgroundColor3 = color, AnchorPoint = Vector2.new(0, 0.5) })
+        makeFrame({ Size = UDim2.new(0, 16, 0, 2), Position = UDim2.new(0.5, 8, 0.5, 0), BackgroundColor3 = color, AnchorPoint = Vector2.new(1, 0.5) })
+    elseif style == "Dot" then
+        local f = makeFrame({ Size = UDim2.new(0, 4, 0, 4), BackgroundColor3 = color })
+        Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
+    elseif style == "Hollow Circle" then
+        local ring = makeFrame({ Size = UDim2.new(0, 18, 0, 18), BackgroundTransparency = 1 })
+        Instance.new("UICorner", ring).CornerRadius = UDim.new(1, 0)
+        local stroke = Instance.new("UIStroke", ring)
+        stroke.Color = color
+        stroke.Thickness = 1.5
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    elseif style == "Cross (Full)" then
+        makeFrame({ Size = UDim2.new(0, 2, 0, 11), Position = UDim2.new(0.5, 0, 0.5, -1), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 1) })
+        makeFrame({ Size = UDim2.new(0, 2, 0, 11), Position = UDim2.new(0.5, 0, 0.5, 1), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 0) })
+        makeFrame({ Size = UDim2.new(0, 11, 0, 2), Position = UDim2.new(0.5, -1, 0.5, 0), BackgroundColor3 = color, AnchorPoint = Vector2.new(1, 0.5) })
+        makeFrame({ Size = UDim2.new(0, 11, 0, 2), Position = UDim2.new(0.5, 1, 0.5, 0), BackgroundColor3 = color, AnchorPoint = Vector2.new(0, 0.5) })
+    elseif style == "Open Plus" then
+        makeFrame({ Size = UDim2.new(0, 2, 0, 6), Position = UDim2.new(0.5, 0, 0.5, -4), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 1) })
+        makeFrame({ Size = UDim2.new(0, 2, 0, 6), Position = UDim2.new(0.5, 0, 0.5, 4), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 0) })
+        makeFrame({ Size = UDim2.new(0, 6, 0, 2), Position = UDim2.new(0.5, -4, 0.5, 0), BackgroundColor3 = color, AnchorPoint = Vector2.new(1, 0.5) })
+        makeFrame({ Size = UDim2.new(0, 6, 0, 2), Position = UDim2.new(0.5, 4, 0.5, 0), BackgroundColor3 = color, AnchorPoint = Vector2.new(0, 0.5) })
+    elseif style == "T-Shape" then
+        makeFrame({ Size = UDim2.new(0, 2, 0, 14), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 0) })
+        makeFrame({ Size = UDim2.new(0, 14, 0, 2), Position = UDim2.new(0.5, 0, 0.5, -7), BackgroundColor3 = color, AnchorPoint = Vector2.new(0.5, 0) })
+    elseif style == "X Shape" then
+        local size = 20
+        for _, rotation in ipairs({45, -45}) do
+            makeFrame({ Size = UDim2.new(0, 2, 0, size), BackgroundColor3 = color, Rotation = rotation })
+        end
+    elseif style == "Dot + Ring" then
+        local dot = makeFrame({ Size = UDim2.new(0, 4, 0, 4), BackgroundColor3 = color })
+        Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+        local ring = makeFrame({ Size = UDim2.new(0, 18, 0, 18), BackgroundTransparency = 1 })
+        Instance.new("UICorner", ring).CornerRadius = UDim.new(1, 0)
+        local stroke = Instance.new("UIStroke", ring)
+        stroke.Color = color
+        stroke.Thickness = 1.5
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    elseif style == "Square" then
+        local sq = makeFrame({ Size = UDim2.new(0, 14, 0, 14), BackgroundTransparency = 1 })
+        local stroke = Instance.new("UIStroke", sq)
+        stroke.Color = color
+        stroke.Thickness = 1.5
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    elseif style == "Chevron" then
+        for _, rotation in ipairs({35, -35}) do
+            makeFrame({ Size = UDim2.new(0, 2, 0, 10), Position = UDim2.new(0.5, 0, 0.5, 2), BackgroundColor3 = color, Rotation = rotation, AnchorPoint = Vector2.new(0.5, 1) })
+        end
+    end
+end
+
+local function setCrosshairVisible(state)
+    WhizConfig.CrosshairVisible = state
+    CrossHolder.Visible = state
+    if state then
+        buildCrosshair(WhizConfig.CrosshairStyle)
+    end
+end
+
+local function updateCrosshairColor()
+    for _, el in ipairs(crosshairElements) do
+        pcall(function()
+            if el:IsA("Frame") then
+                if el.BackgroundTransparency < 1 then
+                    el.BackgroundColor3 = WhizConfig.CrosshairColor
+                end
+                local stroke = el:FindFirstChildOfClass("UIStroke")
+                if stroke then
+                    stroke.Color = WhizConfig.CrosshairColor
+                end
+            end
+        end)
+    end
+end
+
+local HUD_OPACITY = 0.30
+
+local function createPurpleButtonHUD(config)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = config.guiName
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.Parent = LP:WaitForChild("PlayerGui")
+
+    local frame = Instance.new("Frame")
+    frame.Name = config.frameName
+    frame.Size = config.size or UDim2.new(0, 92, 0, 34)
+    frame.Position = config.position or UDim2.new(0, 30, 0, 240)
+    frame.BackgroundColor3 = Color3.fromRGB(14, 6, 26)
+    frame.BackgroundTransparency = HUD_OPACITY
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Parent = gui
+
+    local bgGrad = Instance.new("UIGradient")
+    bgGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(38, 16, 68)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(22, 9, 40)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 5, 24)),
+    })
+    bgGrad.Rotation = 125
+    bgGrad.Parent = frame
+
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+    local glow = Instance.new("UIStroke")
+    glow.Thickness = 1.2
+    glow.Color = Color3.fromRGB(170, 70, 255)
+    glow.Transparency = HUD_OPACITY + 0.15
+    glow.Parent = frame
+
+    local strokeGrad = Instance.new("UIGradient")
+    strokeGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(225, 130, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 60, 230)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(95, 30, 185)),
+    })
+    strokeGrad.Rotation = 45
+    strokeGrad.Parent = glow
+
+    task.spawn(function()
+        local info = TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+        TweenService:Create(glow, info, {
+            Transparency = math.min(0.85, HUD_OPACITY + 0.4),
+            Thickness = 1.8
+        }):Play()
+    end)
+
+    local accent = Instance.new("Frame")
+    accent.Size = UDim2.new(0, 2, 0, 22)
+    accent.Position = UDim2.new(0, 6, 0, 6)
+    accent.BackgroundColor3 = Color3.fromRGB(190, 100, 255)
+    accent.BackgroundTransparency = HUD_OPACITY
+    accent.BorderSizePixel = 0
+    accent.Parent = frame
+    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+
+    local btn = Instance.new("TextButton")
+    btn.Name = "Btn"
+    btn.Size = UDim2.new(1, -14, 1, 0)
+    btn.Position = UDim2.new(0, 14, 0, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = config.text or "ACTION"
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.TextColor3 = Color3.fromRGB(230, 200, 255)
+    btn.TextTransparency = HUD_OPACITY
+    btn.AutoButtonColor = false
+    btn.Parent = frame
+
+    local hover = Instance.new("Frame")
+    hover.Size = UDim2.new(1, 0, 1, 0)
+    hover.BackgroundColor3 = Color3.fromRGB(120, 60, 200)
+    hover.BackgroundTransparency = 1
+    hover.BorderSizePixel = 0
+    hover.ZIndex = 0
+    hover.Parent = frame
+    Instance.new("UICorner", hover).CornerRadius = UDim.new(0, 10)
+
+    frame.ClipsDescendants = true
+
+    local dragging, dragStart, startPos
+    local function beginDrag(input)
+        if WhizConfig.UiLocked then return end
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            beginDrag(input)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if WhizConfig.UiLocked then dragging = false end
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(hover, TweenInfo.new(0.15), { BackgroundTransparency = 0.7 }):Play()
+        TweenService:Create(glow,   TweenInfo.new(0.15), { Transparency = 0.05 }):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(hover, TweenInfo.new(0.15), { BackgroundTransparency = 1 }):Play()
+    end)
+
+    btn.MouseButton1Click:Connect(function()
+        playHudButtonSfx()
+        if config.onClick then config.onClick(btn) end
+    end)
+
+    btn.MouseButton1Down:Connect(function()
+        TweenService:Create(hover, TweenInfo.new(0.08), { BackgroundTransparency = 0.7 }):Play()
+        task.delay(0.15, function()
+            TweenService:Create(hover, TweenInfo.new(0.2), { BackgroundTransparency = 1 }):Play()
+        end)
+    end)
+
+    registerDraggable(frame)
+    return { gui = gui, frame = frame, btn = btn }
+end
+
+local WOUNDED_HOLD_TIME = 2.0
+local woundedEspData = {}
+
+local function destroyWoundedEsp(player)
+    local data = woundedEspData[player]
+    if not data then return end
+    pcall(function() if data.highlight then data.highlight:Destroy() end end)
+    pcall(function() if data.billboard then data.billboard:Destroy() end end)
+    woundedEspData[player] = nil
+end
+
+local function removeAllWoundedEsp()
+    for player, _ in pairs(woundedEspData) do destroyWoundedEsp(player) end
+    woundedEspData = {}
+end
+
+local function createWoundedEsp(player, character)
+    if not character or not character.Parent then return end
+    if woundedEspData[player] then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name                = "WoundedHighlight"
+    highlight.Adornee             = character
+    highlight.FillColor           = Color3.fromRGB(220, 30, 30)
+    highlight.OutlineColor        = Color3.fromRGB(255, 80, 80)
+    highlight.FillTransparency    = 0.55
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent              = character
+
+    local head = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+    local billboard
+    if head then
+        billboard = Instance.new("BillboardGui")
+        billboard.Name        = "WoundedBillboard"
+        billboard.Adornee     = head
+        billboard.Size        = WOUNDED_ICON_SIZE
+        billboard.StudsOffset = Vector3.new(0, 2.6, 0)
+        billboard.AlwaysOnTop = true
+        billboard.MaxDistance = 500
+        billboard.Parent      = head
+
+        local icon = Instance.new("ImageLabel")
+        icon.Name                   = "WoundedIcon"
+        icon.Size                   = UDim2.new(1, 0, 1, 0)
+        icon.BackgroundTransparency = 1
+        icon.Image                  = WOUNDED_TEXTURE_ID
+        icon.ImageTransparency      = 0
+        icon.ScaleType              = Enum.ScaleType.Fit
+        icon.Parent                 = billboard
+
+        task.spawn(function()
+            while icon.Parent do
+                TweenService:Create(icon, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { ImageTransparency = 0 }):Play()
+                task.wait(0.6)
+                if not icon.Parent then break end
+                TweenService:Create(icon, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { ImageTransparency = 1 }):Play()
+                task.wait(0.6)
+            end
+        end)
+    end
+
+    woundedEspData[player] = {
+        highlight    = highlight,
+        billboard    = billboard,
+        lastHp       = humanoid.Health,
+        lastDropTime = tick(),
+    }
+
+    local removed = false
+    local function onRemoved()
+        if removed then return end
+        removed = true
+        destroyWoundedEsp(player)
+    end
+    table.insert(_G.WoundedEspConns, character.Destroying:Connect(onRemoved))
+    table.insert(_G.WoundedEspConns, character.AncestryChanged:Connect(function(_, parent)
+        if parent == nil then onRemoved() end
+    end))
+    if humanoid then
+        table.insert(_G.WoundedEspConns, humanoid.Destroying:Connect(onRemoved))
+    end
+end
+
+local function updateWoundedEspForPlayer(player)
+    if player == LP then return end
+    local character = player.Character
+    if not character then destroyWoundedEsp(player); return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then destroyWoundedEsp(player); return end
+
+    local hp    = humanoid.Health
+    local maxHp = humanoid.MaxHealth
+    local now   = tick()
+
+    if hp <= 0 or hp >= maxHp then
+        destroyWoundedEsp(player)
+        return
+    end
+
+    local data = woundedEspData[player]
+    if data then
+        if hp < data.lastHp - 0.01 then
+            data.lastHp       = hp
+            data.lastDropTime = now
+        else
+            data.lastHp = hp
+            if now - data.lastDropTime > WOUNDED_HOLD_TIME then
+                destroyWoundedEsp(player)
+            end
+        end
+    else
+        if hp < maxHp then
+            local prev = player:GetAttribute("WhizLastHP")
+            if prev == nil then
+                player:SetAttribute("WhizLastHP", hp)
+            elseif hp < prev - 0.01 then
+                player:SetAttribute("WhizLastHP", hp)
+                createWoundedEsp(player, character)
+            else
+                player:SetAttribute("WhizLastHP", hp)
+            end
+        else
+            player:SetAttribute("WhizLastHP", hp)
+        end
+    end
+end
+
+local function hookPlayerForWounded(player)
+    if player == LP then return end
+    local function onCharacter(char)
+        local humanoid = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
+        if not humanoid then return end
+        player:SetAttribute("WhizLastHP", humanoid.Health)
+
+        table.insert(_G.WoundedEspConns, humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+            updateWoundedEspForPlayer(player)
+        end))
+        table.insert(_G.WoundedEspConns, humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(function()
+            updateWoundedEspForPlayer(player)
+        end))
+        table.insert(_G.WoundedEspConns, humanoid.Died:Connect(function()
+            destroyWoundedEsp(player)
+        end))
+        updateWoundedEspForPlayer(player)
+    end
+    if player.Character then task.spawn(onCharacter, player.Character) end
+    table.insert(_G.WoundedEspConns, player.CharacterAdded:Connect(onCharacter))
+end
+
+local function startWoundedEsp()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP then hookPlayerForWounded(plr) end
+    end
+    table.insert(_G.WoundedEspConns, Players.PlayerAdded:Connect(function(plr)
+        if WhizConfig.WoundedEsp then hookPlayerForWounded(plr) end
+    end))
+    table.insert(_G.WoundedEspConns, Players.PlayerRemoving:Connect(function(plr)
+        destroyWoundedEsp(plr)
+    end))
+
+    task.spawn(function()
+        while WhizConfig.WoundedEsp do
+            local now = tick()
+            for plr, data in pairs(woundedEspData) do
+                if not plr or not plr.Parent then
+                    destroyWoundedEsp(plr)
+                elseif data then
+                    if now - data.lastDropTime > WOUNDED_HOLD_TIME then
+                        destroyWoundedEsp(plr)
+                    end
+                end
+            end
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LP then pcall(updateWoundedEspForPlayer, plr) end
+            end
+            task.wait(0.25)
+        end
+    end)
+end
+
+local function stopWoundedEsp()
+    removeAllWoundedEsp()
+    pcall(function()
+        for _, conn in ipairs(_G.WoundedEspConns) do
+            pcall(function() conn:Disconnect() end)
+        end
+    end)
+    _G.WoundedEspConns = {}
+end
+
+local decryptedEspData = {}
+
+local function getCryptographyFolder()
+    return workspace:FindFirstChild("Cryptography")
+end
+
+local function getDecryptedFragment()
+    local folder = getCryptographyFolder()
+    if not folder then return nil end
+    local df = folder:FindFirstChild("decrypted fragment")
+    if df then return df end
+    for _, child in ipairs(folder:GetChildren()) do
+        local n = string.lower(string.gsub(tostring(child.Name or ""), "[%s_%-]", ""))
+        if n == "decryptedfragment" then
+            return child
+        end
+    end
+    return nil
+end
+
+local function destroyDecryptedEsp(target)
+    local data = decryptedEspData[target]
+    if not data then return end
+    pcall(function() if data.highlight then data.highlight:Destroy() end end)
+    pcall(function() if data.billboard then data.billboard:Destroy() end end)
+    decryptedEspData[target] = nil
+end
+
+local function removeAllDecryptedEsp()
+    for t, _ in pairs(decryptedEspData) do destroyDecryptedEsp(t) end
+    decryptedEspData = {}
+end
+
+local function createDecryptedEsp(target)
+    if not target or not target.Parent then return end
+    if decryptedEspData[target] then return end
+
+    local adornee = target
+    if target:IsA("Model") then
+        adornee = target.PrimaryPart
+            or target:FindFirstChildWhichIsA("BasePart", true)
+            or target
+    end
+    if not (adornee and adornee:IsA("BasePart")) then return end
+
+    local hl = Instance.new("Highlight")
+    hl.Name                = "DecryptedHighlight"
+    hl.Adornee             = target
+    hl.FillColor           = Color3.fromRGB(255, 255, 255)
+    hl.OutlineColor        = Color3.fromRGB(255, 255, 255)
+    hl.FillTransparency    = 0.55
+    hl.OutlineTransparency = 0
+    hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent              = target
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name        = "DecryptedBillboard"
+    billboard.Adornee     = adornee
+    billboard.Size        = UDim2.new(0, 170, 0, 22)
+    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+    billboard.AlwaysOnTop = true
+    billboard.MaxDistance = 500
+    billboard.Parent      = adornee
+
+    local label = Instance.new("TextLabel")
+    label.Size                   = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text                   = "DECRYPTED FRAGMENT"
+    label.TextColor3             = Color3.fromRGB(255, 255, 255)
+    label.TextStrokeTransparency = 0
+    label.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
+    label.TextScaled             = true
+    label.Font                   = Enum.Font.GothamBold
+    label.Parent                 = billboard
+
+    decryptedEspData[target] = {
+        highlight = hl,
+        billboard = billboard,
+    }
+
+    local removed = false
+    local function onRemoved()
+        if removed then return end
+        removed = true
+        destroyDecryptedEsp(target)
+    end
+
+    table.insert(_G.DecryptedEspConns, target.Destroying:Connect(onRemoved))
+    table.insert(_G.DecryptedEspConns, target.AncestryChanged:Connect(function(_, parent)
+        if parent == nil then onRemoved() end
+    end))
+end
+
+local function scanDecrypted()
+    pcall(function()
+        local target = getDecryptedFragment()
+        if target then
+            createDecryptedEsp(target)
+        end
+    end)
+end
+
+local function startDecryptedEsp()
+    scanDecrypted()
+
+    table.insert(_G.DecryptedEspConns, workspace.ChildAdded:Connect(function(obj)
+        if not WhizConfig.DecryptedEsp then return end
+        if obj.Name == "Cryptography" then
+            task.wait(0.05)
+            scanDecrypted()
+        end
+    end))
+
+    pcall(function()
+        local folder = getCryptographyFolder()
+        if folder then
+            table.insert(_G.DecryptedEspConns, folder.ChildAdded:Connect(function(obj)
+                if not WhizConfig.DecryptedEsp then return end
+                local n = string.lower(string.gsub(tostring(obj.Name or ""), "[%s_%-]", ""))
+                if n == "decryptedfragment" then
+                    task.wait(0.05)
+                    createDecryptedEsp(obj)
+                end
+            end))
+        end
+    end)
+
+    task.spawn(function()
+        while WhizConfig.DecryptedEsp do
+            pcall(scanDecrypted)
+            pcall(function()
+                for target, _ in pairs(decryptedEspData) do
+                    if not target or not target.Parent then
+                        destroyDecryptedEsp(target)
+                    end
+                end
+            end)
+            task.wait(1)
+        end
+    end)
+end
+
+local function stopDecryptedEsp()
+    removeAllDecryptedEsp()
+    pcall(function()
+        for _, conn in ipairs(_G.DecryptedEspConns) do
+            pcall(function() conn:Disconnect() end)
+        end
+    end)
+    _G.DecryptedEspConns = {}
+end
+
+local TANK_AI    = { ["ai_tank"]      = true }
+local FLAMER_AI  = { ["ai_arsonist"]  = true }
+local INFANTRY_AI = {
+    ["ai_excavator"] = true, ["ai_impostor"] = true, ["ai_rat"] = true,
+    ["ai_officer"]   = true, ["ai_raider"]   = true, ["ai_sniper"] = true,
+    ["ai_rifleman"]  = true, ["ai_engineer"] = true, ["ai_medic"]  = true,
+}
+local OTHERS_AI = { ["ai_bombardier"] = true }
+
+local ALL_KNOWN_AI = {}
+for k in pairs(TANK_AI)     do ALL_KNOWN_AI[k] = true end
+for k in pairs(FLAMER_AI)   do ALL_KNOWN_AI[k] = true end
+for k in pairs(INFANTRY_AI) do ALL_KNOWN_AI[k] = true end
+for k in pairs(OTHERS_AI)   do ALL_KNOWN_AI[k] = true end
+
+local function normalizeName(n)
+    return string.lower(string.gsub(tostring(n or ""), "[%s_%-]", ""))
+end
+
+local function resolveAiType(model)
+    if not model or not model.Parent then return nil end
+    local mName = string.lower(tostring(model.Name or ""))
+    if ALL_KNOWN_AI[mName] then return mName end
+    local mNorm = normalizeName(mName)
+    for ai in pairs(ALL_KNOWN_AI) do
+        if normalizeName(ai) == mNorm then return ai end
+    end
+    for _, child in ipairs(model:GetChildren()) do
+        if child:IsA("StringValue") then
+            local v = string.lower(tostring(child.Value or ""))
+            if ALL_KNOWN_AI[v] then return v end
+            local vN = normalizeName(v)
+            for ai in pairs(ALL_KNOWN_AI) do
+                if normalizeName(ai) == vN then return ai end
+            end
+        end
+    end
+    for _, attr in ipairs({"AI", "ai", "Type", "type", "AiType", "AIType", "AiName", "AIName"}) do
+        local ok, val = pcall(function() return model:GetAttribute(attr) end)
+        if ok and val then
+            local v = string.lower(tostring(val))
+            if ALL_KNOWN_AI[v] then return v end
+            local vN = normalizeName(v)
+            for ai in pairs(ALL_KNOWN_AI) do
+                if normalizeName(ai) == vN then return ai end
+            end
+        end
+    end
+    local parent = model.Parent
+    local depth = 0
+    while parent and parent ~= workspace and depth < 2 do
+        if parent:IsA("Model") then
+            local pName = string.lower(tostring(parent.Name or ""))
+            if ALL_KNOWN_AI[pName] then return pName end
+            local pN = normalizeName(pName)
+            for ai in pairs(ALL_KNOWN_AI) do
+                if normalizeName(ai) == pN then return ai end
+            end
+        end
+        parent = parent.Parent
+        depth = depth + 1
+    end
+    return nil
+end
+
+local function categorize(model)
+    local ai = resolveAiType(model)
+    if not ai then return nil end
+    if TANK_AI[ai]     then return "Tank" end
+    if FLAMER_AI[ai]   then return "Flamethrower" end
+    if INFANTRY_AI[ai] then return "Infantry" end
+    if OTHERS_AI[ai]   then return "Others" end
+    return nil
+end
+
+local function isEnemyAlive(model)
+    if not model or not model.Parent then return false end
+    if not model:IsA("Model") then return false end
+    if Players:GetPlayerFromCharacter(model) then return false end
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then return false end
+    if not (model.PrimaryPart
+        or model:FindFirstChild("HumanoidRootPart")
+        or model:FindFirstChildOfClass("Humanoid")
+        or model:FindFirstChild("Torso")) then
+        return false
+    end
+    return true
+end
+
+local enemyRegistry, validationQueue = {}, {}
+local VALIDATION_DELAY = 0.35
+
+local function queueCandidate(model)
+    if not model or not model:IsA("Model") then return end
+    if enemyRegistry[model] or validationQueue[model] then return end
+    if not isEnemyAlive(model) then return end
+    if not categorize(model) then return end
+    validationQueue[model] = tick()
+end
+
+local function tickCounter()
+    local now = tick()
+    for model, data in pairs(enemyRegistry) do
+        if not isEnemyAlive(model) then
+            enemyRegistry[model] = nil
+        else
+            local cat = categorize(model)
+            if not cat then
+                enemyRegistry[model] = nil
+            elseif cat ~= data.cat then
+                data.cat = cat
+            end
+        end
+    end
+    for model, spawnTime in pairs(validationQueue) do
+        if not isEnemyAlive(model) then
+            validationQueue[model] = nil
+        elseif now - spawnTime >= VALIDATION_DELAY then
+            local cat = categorize(model)
+            if cat then
+                enemyRegistry[model] = { cat = cat }
+            end
+            validationQueue[model] = nil
+        end
+    end
+    local counts = { Tank = 0, Flamethrower = 0, Infantry = 0, Others = 0 }
+    local total = 0
+    for model, data in pairs(enemyRegistry) do
+        if data.cat and isEnemyAlive(model) then
+            counts[data.cat] = (counts[data.cat] or 0) + 1
+            total = total + 1
+        end
+    end
+    return total, counts
+end
+
+local enemyGui, enemyFrame, enemyTotalLabel, enemyBreakdown = nil, nil, nil, nil
+local enemyUpdateThread = false
+local lastTotal, lastCounts = -1, nil
+
+local function createEnemyHud()
+    if enemyGui then return end
+    enemyGui = Instance.new("ScreenGui")
+    enemyGui.Name = "WhizEnemyHUD"
+    enemyGui.ResetOnSpawn = false
+    enemyGui.IgnoreGuiInset = true
+    enemyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    enemyGui.Parent = LP:WaitForChild("PlayerGui")
+
+    enemyFrame = Instance.new("Frame")
+    enemyFrame.Size = UDim2.new(0, 180, 0, 74)
+    enemyFrame.Position = UDim2.new(0, 30, 0, 130)
+    enemyFrame.BackgroundColor3 = Color3.fromRGB(14, 6, 26)
+    enemyFrame.BackgroundTransparency = HUD_OPACITY
+    enemyFrame.BorderSizePixel = 0
+    enemyFrame.Active = true
+    enemyFrame.Parent = enemyGui
+
+    local bgGrad = Instance.new("UIGradient")
+    bgGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(38, 16, 68)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(22, 9, 40)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 5, 24)),
+    })
+    bgGrad.Rotation = 125
+    bgGrad.Parent = enemyFrame
+
+    Instance.new("UICorner", enemyFrame).CornerRadius = UDim.new(0, 10)
+
+    local glow = Instance.new("UIStroke")
+    glow.Thickness = 1.2
+    glow.Color = Color3.fromRGB(170, 70, 255)
+    glow.Transparency = HUD_OPACITY + 0.15
+    glow.Parent = enemyFrame
+
+    task.spawn(function()
+        local info = TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+        TweenService:Create(glow, info, {
+            Transparency = math.min(0.85, HUD_OPACITY + 0.4),
+            Thickness = 1.8
+        }):Play()
+    end)
+
+    local accent = Instance.new("Frame")
+    accent.Size = UDim2.new(0, 2, 0, 30)
+    accent.Position = UDim2.new(0, 7, 0, 8)
+    accent.BackgroundColor3 = Color3.fromRGB(190, 100, 255)
+    accent.BackgroundTransparency = HUD_OPACITY
+    accent.BorderSizePixel = 0
+    accent.Parent = enemyFrame
+    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+
+    local header = Instance.new("TextLabel")
+    header.Size = UDim2.new(1, -20, 0, 10)
+    header.Position = UDim2.new(0, 15, 0, 6)
+    header.BackgroundTransparency = 1
+    header.Text = "ENEMIES ALIVE"
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 9
+    header.TextColor3 = Color3.fromRGB(215, 175, 255)
+    header.TextTransparency = HUD_OPACITY
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.Parent = enemyFrame
+
+    enemyTotalLabel = Instance.new("TextLabel")
+    enemyTotalLabel.Size = UDim2.new(1, -20, 0, 26)
+    enemyTotalLabel.Position = UDim2.new(0, 15, 0, 16)
+    enemyTotalLabel.BackgroundTransparency = 1
+    enemyTotalLabel.Text = "0"
+    enemyTotalLabel.Font = Enum.Font.GothamBlack
+    enemyTotalLabel.TextSize = 24
+    enemyTotalLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    enemyTotalLabel.TextTransparency = HUD_OPACITY
+    enemyTotalLabel.TextXAlignment = Enum.TextXAlignment.Left
+    enemyTotalLabel.Parent = enemyFrame
+
+    enemyBreakdown = Instance.new("TextLabel")
+    enemyBreakdown.Size = UDim2.new(1, -20, 0, 22)
+    enemyBreakdown.Position = UDim2.new(0, 15, 0, 44)
+    enemyBreakdown.BackgroundTransparency = 1
+    enemyBreakdown.Text = "Tank 0 | Flame 0 | Inf 0 | Other 0"
+    enemyBreakdown.Font = Enum.Font.GothamMedium
+    enemyBreakdown.TextSize = 9
+    enemyBreakdown.TextColor3 = Color3.fromRGB(200, 175, 235)
+    enemyBreakdown.TextTransparency = HUD_OPACITY
+    enemyBreakdown.TextXAlignment = Enum.TextXAlignment.Left
+    enemyBreakdown.Parent = enemyFrame
+
+    local dragging, dragStart, startPos
+    local function beginDrag(input)
+        if WhizConfig.UiLocked then return end
+        dragging = true
+        dragStart = input.Position
+        startPos = enemyFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+
+    table.insert(_G.EnemyHudConns, enemyFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then beginDrag(input) end
+    end))
+
+    for _, child in ipairs(enemyFrame:GetDescendants()) do
+        if child:IsA("GuiObject") then
+            child.Active = true
+            table.insert(_G.EnemyHudConns, child.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then beginDrag(input) end
+            end))
+        end
+    end
+
+    table.insert(_G.EnemyHudConns, UserInputService.InputChanged:Connect(function(input)
+        if WhizConfig.UiLocked then dragging = false end
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            enemyFrame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end))
+
+    registerDraggable(enemyFrame)
+end
+
+local function destroyEnemyHud()
+    enemyUpdateThread = false
+    if enemyGui then pcall(function() enemyGui:Destroy() end) end
+    if enemyFrame then DraggableRegistry[enemyFrame] = nil end
+    enemyGui, enemyFrame, enemyTotalLabel, enemyBreakdown = nil, nil, nil, nil
+    enemyRegistry = {}
+    validationQueue = {}
+    pcall(function()
+        for _, conn in ipairs(_G.EnemyHudConns) do
+            pcall(function() conn:Disconnect() end)
+        end
+    end)
+    _G.EnemyHudConns = {}
+end
+
+local function refreshHud()
+    if not enemyGui then return end
+    pcall(function()
+        local total, counts = tickCounter()
+        local changed = (total ~= lastTotal)
+        if not changed and lastCounts then
+            if (counts.Tank ~= lastCounts.Tank)
+            or (counts.Flamethrower ~= lastCounts.Flamethrower)
+            or (counts.Infantry ~= lastCounts.Infantry)
+            or (counts.Others ~= lastCounts.Others) then
+                changed = true
+            end
+        end
+        if changed then
+            lastTotal  = total
+            lastCounts = counts
+            if enemyTotalLabel then enemyTotalLabel.Text = tostring(total) end
+            if enemyBreakdown then
+                enemyBreakdown.Text = string.format("Tank %d | Flame %d | Inf %d | Other %d",
+                    counts.Tank or 0, counts.Flamethrower or 0,
+                    counts.Infantry or 0, counts.Others or 0)
+            end
+        end
+    end)
+end
+
+local function startEnemyUpdater()
+    if enemyUpdateThread then return end
+    enemyUpdateThread = true
+
+    pcall(function()
+        table.insert(_G.EnemyHudConns, workspace.DescendantAdded:Connect(function(obj)
+            if obj:IsA("Model") then
+                queueCandidate(obj)
+            elseif obj:IsA("Humanoid") then
+                local parent = obj.Parent
+                if parent and parent:IsA("Model") then
+                    queueCandidate(parent)
+                end
+            end
+        end))
+    end)
+
+    task.spawn(function()
+        while enemyUpdateThread and enemyGui do
+            pcall(refreshHud)
+            task.wait(0.1)
+        end
+    end)
+
+    task.spawn(function()
+        while enemyUpdateThread and enemyGui do
+            pcall(function()
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and not enemyRegistry[obj] and not validationQueue[obj] then
+                        queueCandidate(obj)
+                    end
+                end
+            end)
+            task.wait(1)
+        end
+    end)
+end
+
+local dogtagHighlights, dogtagPrompts = {}, {}
+
+local function getCorpseModel(prompt)
+    if not prompt then return nil end
+    local node = prompt.Parent
+    while node and node ~= workspace do
+        if node:IsA("Model") then
+            if node:FindFirstChildOfClass("Humanoid") or string.lower(node.Name) == "corpse" then
+                return node
+            end
+        end
+        node = node.Parent
+    end
+    return nil
+end
+
+local function destroyCorpseEsp(model)
+    if not model then return end
+    local hl = dogtagHighlights[model]
+    if hl then
+        pcall(function() hl:Destroy() end)
+        dogtagHighlights[model] = nil
+    end
+    pcall(function()
+        local leftover = model:FindFirstChild("DogtagCorpseHighlight")
+        if leftover then leftover:Destroy() end
+    end)
+end
+
+local function removeDogtagEsp()
+    for model, hl in pairs(dogtagHighlights) do
+        pcall(function() hl:Destroy() end)
+    end
+    dogtagHighlights = {}
+    dogtagPrompts = {}
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj.Name == "DogtagCorpseHighlight" then obj:Destroy() end
+        end
+    end)
+end
+
+local function createCorpseEsp(prompt)
+    if not prompt or not prompt.Parent then return end
+    if prompt.Enabled == false then return end
+    local model = getCorpseModel(prompt)
+    if not model then return end
+    if dogtagHighlights[model] then
+        dogtagPrompts[prompt] = model
+        return
+    end
+
+    local hl = Instance.new("Highlight")
+    hl.Name                = "DogtagCorpseHighlight"
+    hl.Adornee             = model
+    hl.FillColor           = Color3.fromRGB(255, 215, 0)
+    hl.OutlineColor        = Color3.fromRGB(255, 255, 0)
+    hl.FillTransparency    = 0.4
+    hl.OutlineTransparency = 0
+    hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent              = model
+
+    dogtagHighlights[model] = hl
+    dogtagPrompts[prompt]   = model
+
+    local removed = false
+    local function onRemoved()
+        if removed then return end
+        removed = true
+        destroyCorpseEsp(model)
+        dogtagPrompts[prompt] = nil
+    end
+
+    for _, c in ipairs({
+        prompt.Destroying:Connect(onRemoved),
+        prompt.AncestryChanged:Connect(function(_, parent) if parent == nil then onRemoved() end end),
+        prompt:GetPropertyChangedSignal("Enabled"):Connect(function() if prompt.Enabled == false then onRemoved() end end),
+        model.Destroying:Connect(onRemoved),
+        model.AncestryChanged:Connect(function(_, parent) if parent == nil then onRemoved() end end),
+    }) do
+        table.insert(_G.DogtagEspConns, c)
+    end
+end
+
+local function scanDogtags()
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") and obj.Name == "dogtagPrompt" and obj.Enabled then
+                createCorpseEsp(obj)
+            end
+        end
+    end)
+end
+
+pcall(function()
+    if _G.DogtagTriggerConn then _G.DogtagTriggerConn:Disconnect() end
+    _G.DogtagTriggerConn = ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
+        if player ~= LP then return end
+        if prompt and prompt.Name == "dogtagPrompt" then
+            local model = dogtagPrompts[prompt] or getCorpseModel(prompt)
+            task.wait(0.05)
+            destroyCorpseEsp(model)
+            dogtagPrompts[prompt] = nil
+        end
+    end)
+end)
+
+local PROTECTED_KEYWORDS = {
+    "adjust", "bake", "cook", "hold", "charge", "channel",
+    "wind", "pull", "grind", "sharpen", "pour", "stir"
+}
+
+local function isProtectedPrompt(prompt)
+    if not prompt then return false end
+    local combined = string.lower(
+        (prompt.Name or "") .. " " .. (prompt.ActionText or "") .. " " .. (prompt.ObjectText or "")
+    )
+    for _, kw in ipairs(PROTECTED_KEYWORDS) do
+        if combined:find(kw, 1, true) then return true end
+    end
+    return false
+end
+
+local originalHoldDurations = {}
+
+local function applyInstantPrompt(prompt)
+    if not prompt or not prompt.Parent then return end
+    if not prompt:IsA("ProximityPrompt") then return end
+    if isProtectedPrompt(prompt) then return end
+    if originalHoldDurations[prompt] == nil then
+        originalHoldDurations[prompt] = prompt.HoldDuration
+    end
+    pcall(function() prompt.HoldDuration = 0 end)
+end
+
+local function restoreInstantPrompt(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    if originalHoldDurations[prompt] ~= nil then
+        pcall(function() prompt.HoldDuration = originalHoldDurations[prompt] end)
+        originalHoldDurations[prompt] = nil
+    end
+end
+
+local function applyAllPrompts()
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") then applyInstantPrompt(obj) end
+        end
+    end)
+end
+
+local function restoreAllPrompts()
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") then restoreInstantPrompt(obj) end
+        end
+    end)
+end
+
+local function startInstantPrompt()
+    applyAllPrompts()
+    pcall(function()
+        if _G.InstantPromptConn then _G.InstantPromptConn:Disconnect() end
+        _G.InstantPromptConn = workspace.DescendantAdded:Connect(function(obj)
+            if obj:IsA("ProximityPrompt") and WhizConfig.InstantPrompt then
+                task.wait(0.05)
+                applyInstantPrompt(obj)
+            end
+        end)
+    end)
+    task.spawn(function()
+        while WhizConfig.InstantPrompt do
+            applyAllPrompts()
+            task.wait(1)
+        end
+    end)
+end
+
+local function stopInstantPrompt()
+    pcall(function()
+        if _G.InstantPromptConn then
+            _G.InstantPromptConn:Disconnect()
+            _G.InstantPromptConn = nil
+        end
+    end)
+    restoreAllPrompts()
+end
+
+local function UniversalReload()
+    pcall(function()
+        local char = LP.Character
+        if not char then return end
+        for _, tool in pairs(char:GetChildren()) do
+            if tool:IsA("Tool") then
+                local r = tool:FindFirstChild("RemoteEvent", true)
+                if r and r.Parent and r.Parent.Name == "prompt" then
+                    r:FireServer()
+                end
+            end
+        end
+        local fastList = {"lee", "web", "cow", "spring", "flare"}
+        for _, name in pairs(fastList) do
+            local w = char:FindFirstChild(name)
+            if w and w:FindFirstChild("Handle") then
+                pcall(function()
+                    w.Handle.wood.promptload.prompt.RemoteEvent:FireServer()
+                end)
+            end
+        end
+    end)
+end
+
+local MainTab   = Window:AddTab({ Name = "Combat Ops",      Icon = "crown",    Group = "MENU", Description = "Aim assist and interaction tools." })
+local VisualTab = Window:AddTab({ Name = "Visual Engine",   Icon = "eye",      Group = "MENU", Description = "ESP, crosshair and live enemy counter." })
+local WorldTab  = Window:AddTab({ Name = "Environment",     Icon = "globe",    Group = "MENU", Description = "Movement, lighting and performance options." })
+local ExtraTab  = Window:AddTab({ Name = "Extra Utilities", Icon = "farm",     Group = "MENU", Description = "Cleaning, reload buttons and HUD lock." })
+
+local AimSection    = MainTab:AddSection({ Name = "Silent Aim", Side = "Left" })
+local PromptSection = MainTab:AddSection({ Name = "Interaction", Side = "Right" })
+
+AimSection:AddToggle({
+    Name    = "Silent Aim (Thin & Smooth)",
+    Default = false,
+    Flag    = "SilentAim",
+    Callback = function(state)
+        WhizConfig.SilentAim = state
+        if state then
+            if WhizConfig.AimbotLoaded then return end
+            WhizConfig.AimbotLoaded = true
+            local Circle = Drawing.new("Circle")
+            Circle.Visible      = true
+            Circle.Radius       = WhizConfig.AimbotFOV
+            Circle.Thickness    = 1
+            Circle.Transparency = 1
+            Circle.Filled       = false
+            Circle.Color        = Color3.new(1, 1, 1)
+            _G.FOVCircle = Circle
+            _G.AimbotConnection = RS.RenderStepped:Connect(function()
+                if not WhizConfig.SilentAim then return end
+                pcall(function()
+                    local viewport = Camera.ViewportSize
+                    local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+                    Circle.Position = center
+                    Circle.Color    = Color3.fromHSV(tick() % 5 / 5, 0.8, 1)
+                    Circle.Radius   = WhizConfig.AimbotFOV
+
+                    local bestPart = nil
+                    local minDist = Circle.Radius
+
+                    for _, v in pairs(workspace:GetChildren()) do
+                        if v:IsA("Model") and not Players:GetPlayerFromCharacter(v) then
+                            pcall(function()
+                                local hum = v:FindFirstChildOfClass("Humanoid")
+                                if hum and hum.Health > 0 then
+                                    local targetPart = getTargetPart(v, center)
+                                    if targetPart and targetPart:IsA("BasePart") then
+                                        local pos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                                        if onScreen then
+                                            local scr = Vector2.new(pos.X, pos.Y)
+                                            local d = (scr - center).Magnitude
+                                            if d < minDist then
+                                                minDist = d
+                                                bestPart = targetPart
+                                            end
+                                        end
+                                    end
+                                end
+                            end)
+                        end
+                    end
+
+                    if bestPart then
+                        Camera.CFrame = Camera.CFrame:Lerp(
+                            CFrame.new(Camera.CFrame.Position, bestPart.Position), 0.12
+                        )
+                    end
+                end)
+            end)
+        else
+            if _G.AimbotConnection then _G.AimbotConnection:Disconnect() _G.AimbotConnection = nil end
+            if _G.FOVCircle then _G.FOVCircle:Remove() _G.FOVCircle = nil end
+            WhizConfig.AimbotLoaded = false
+        end
+    end,
+})
+
+AimSection:AddDropdown({
+    Name      = "Aim Target Part",
+    Options   = { "Head", "Torso", "Leg", "Arms", "HumanoidRootPart", "Closest" },
+    Default   = "Head",
+    AllowNone = false,
+    Flag      = "AimPart",
+    Callback  = function(selected)
+        if selected then WhizConfig.AimbotPart = selected end
+    end,
+})
+
+AimSection:AddSlider({
+    Name      = "Aimbot FOV Radius",
+    Min       = 30,
+    Max       = 800,
+    Default   = 150,
+    Increment = 1,
+    Flag      = "AimFOV",
+    Callback  = function(n)
+        WhizConfig.AimbotFOV = n
+        if _G.FOVCircle then
+            pcall(function() _G.FOVCircle.Radius = n end)
+        end
+    end,
+})
+
+PromptSection:AddToggle({
+    Name    = "Instant ProximityPrompt",
+    Default = false,
+    Flag    = "InstantPrompt",
+    Callback = function(state)
+        WhizConfig.InstantPrompt = state
+        if state then startInstantPrompt() else stopInstantPrompt() end
+    end,
+})
+
+local EspSection   = VisualTab:AddSection({ Name = "ESP", Side = "Left" })
+local CrossSection = VisualTab:AddSection({ Name = "Crosshair", Side = "Right" })
+
+EspSection:AddToggle({
+    Name    = "NPC Tracker (Box ESP)",
+    Default = false,
+    Flag    = "NpcEsp",
+    Callback = function(v) WhizConfig.EspActive = v end,
+})
+
+EspSection:AddToggle({
+    Name    = "Wounded Player ESP (Red)",
+    Default = false,
+    Flag    = "WoundedEsp",
+    Callback = function(v)
+        WhizConfig.WoundedEsp = v
+        if v then startWoundedEsp() else stopWoundedEsp() end
+    end,
+})
+
+EspSection:AddToggle({
+    Name    = "Dogtag ESP (Yellow Body)",
+    Default = false,
+    Flag    = "DogtagEsp",
+    Callback = function(v)
+        WhizConfig.DogtagEsp = v
+        if v then scanDogtags() else removeDogtagEsp() end
+    end,
+})
+
+EspSection:AddToggle({
+    Name    = "Decrypted Fragment ESP (White)",
+    Default = false,
+    Flag    = "DecryptedEsp",
+    Callback = function(v)
+        WhizConfig.DecryptedEsp = v
+        if v then startDecryptedEsp() else stopDecryptedEsp() end
+    end,
+})
+
+EspSection:AddToggle({
+    Name    = "Total Enemies (Real-Time HUD)",
+    Default = false,
+    Flag    = "EnemyHud",
+    Callback = function(v)
+        WhizConfig.EnemyCountHud = v
+        if v then
+            lastTotal  = -1
+            lastCounts = nil
+            enemyRegistry   = {}
+            validationQueue = {}
+            createEnemyHud()
+            startEnemyUpdater()
+            refreshHud()
+        else
+            destroyEnemyHud()
+        end
+    end,
+})
+
+CrossSection:AddToggle({
+    Name    = "Show Crosshair",
+    Default = false,
+    Flag    = "CrosshairShow",
+    Callback = function(v) setCrosshairVisible(v) end,
+})
+
+CrossSection:AddDropdown({
+    Name      = "Crosshair Style",
+    Options   = {
+        "Purple Plus", "Dot", "Hollow Circle", "Cross (Full)", "Open Plus",
+        "T-Shape", "X Shape", "Dot + Ring", "Square", "Chevron",
+    },
+    Default   = "Purple Plus",
+    AllowNone = false,
+    Flag      = "CrosshairStyle",
+    Callback  = function(selected)
+        if not selected then return end
+        WhizConfig.CrosshairStyle = selected
+        if WhizConfig.CrosshairVisible then
+            buildCrosshair(selected)
+        end
+    end,
+})
+
+CrossSection:AddDropdown({
+    Name      = "Crosshair Color",
+    Options   = CROSSHAIR_COLOR_NAMES,
+    Default   = "Purple",
+    AllowNone = false,
+    Flag      = "CrosshairColor",
+    Callback  = function(name)
+        local color = name and CROSSHAIR_COLORS[name]
+        if not color then return end
+        WhizConfig.CrosshairColor = color
+        updateCrosshairColor()
+    end,
+})
+
+local MoveSection   = WorldTab:AddSection({ Name = "Movement", Side = "Left" })
+local RenderSection = WorldTab:AddSection({ Name = "Render Distance", Side = "Left" })
+local LightSection  = WorldTab:AddSection({ Name = "Lighting & Graphics", Side = "Right" })
+
+MoveSection:AddSlider({
+    Name      = "Custom Speed Value",
+    Min       = 1,
+    Max       = 200,
+    Default   = 16,
+    Increment = 1,
+    Flag      = "SpeedValue",
+    Callback  = function(n) WhizConfig.WalkSpeed = n end,
+})
+
+MoveSection:AddToggle({
+    Name    = "Enable Custom Speed",
+    Default = false,
+    Flag    = "SpeedEnabled",
+    Callback = function(v)
+        WhizConfig.CustomSpeedEnabled = v
+        if not v then
+            pcall(function()
+                if LP.Character and LP.Character:FindFirstChildOfClass("Humanoid") then
+                    LP.Character.Humanoid.WalkSpeed = DEFAULT_SPEED
+                end
+            end)
+        end
+    end,
+})
+
+LightSection:AddToggle({
+    Name    = "Perfect Fullbright",
+    Default = false,
+    Flag    = "Fullbright",
+    Callback = function(v)
+        WhizConfig.Fullbright = v
+        updateLightingFeatures()
+    end,
+})
+
+LightSection:AddToggle({
+    Name    = "No Fog",
+    Default = false,
+    Flag    = "NoFog",
+    Callback = function(v)
+        WhizConfig.NoFog = v
+        updateLightingFeatures()
+    end,
+})
+
+LightSection:AddToggle({
+    Name    = "No Lag (Low Graphics)",
+    Default = false,
+    Flag    = "NoLag",
+    Callback = function(v)
+        WhizConfig.NoLag = v
+        toggleNoLag(v)
+    end,
+})
+
+RenderSection:AddSlider({
+    Name      = "Render Distance (Studs)",
+    Min       = 100,
+    Max       = 5000,
+    Default   = 500,
+    Increment = 50,
+    Flag      = "RenderStuds",
+    Callback  = function(n) WhizConfig.RenderDistanceStuds = n end,
+})
+
+RenderSection:AddToggle({
+    Name    = "Enable Render Distance",
+    Default = false,
+    Flag    = "RenderEnabled",
+    Callback = function(v)
+        WhizConfig.RenderDistanceOn = v
+        if v then startRenderDistance() else stopRenderDistance() end
+    end,
+})
+
+local UtilSection = ExtraTab:AddSection({ Name = "Utilities", Side = "Left" })
+local HudSection  = ExtraTab:AddSection({ Name = "HUD Buttons", Side = "Right" })
+
+UtilSection:AddToggle({
+    Name    = "Auto-Clean Dirt (Loop)",
+    Default = false,
+    Flag    = "AutoClean",
+    Callback = function(v)
+        WhizConfig.AutoClean = v
+        if v then
+            task.spawn(function()
+                while WhizConfig.AutoClean do
+                    pcall(function() RP.wipedirt:FireServer() end)
+                    task.wait(1)
+                end
+            end)
+        end
+    end,
+})
+
+UtilSection:AddToggle({
+    Name    = "Lock HUD Position",
+    Default = false,
+    Flag    = "UiLocked",
+    Callback = function(v)
+        WhizConfig.UiLocked = v
+        applyLockState()
+    end,
+})
+
+HudSection:AddButton({
+    Name       = "Instant Reload",
+    Icon       = "refresh",
+    ButtonText = "Spawn",
+    Callback   = function()
+        if LP.PlayerGui:FindFirstChild("WhizReloadHUD") then return end
+        createPurpleButtonHUD({
+            guiName   = "WhizReloadHUD",
+            frameName = "ReloadFrame",
+            text      = "RELOAD",
+            position  = UDim2.new(0, 30, 0, 220),
+            size      = UDim2.new(0, 92, 0, 34),
+            onClick   = function()
+                UniversalReload()
+            end,
+        })
+    end,
+})
+
+HudSection:AddButton({
+    Name       = "Clean Button (Manual)",
+    Icon       = "trash",
+    ButtonText = "Spawn",
+    Callback   = function()
+        if LP.PlayerGui:FindFirstChild("WhizCleanHUD") then return end
+        createPurpleButtonHUD({
+            guiName   = "WhizCleanHUD",
+            frameName = "CleanFrame",
+            text      = "CLEAN",
+            position  = UDim2.new(0, 30, 0, 264),
+            size      = UDim2.new(0, 92, 0, 34),
+            onClick   = function()
+                pcall(function() RP.wipedirt:FireServer() end)
+            end,
+        })
+    end,
+})
+
+Window:CreateSettingsTab({ Group = "ACCOUNT" })
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            if WhizConfig.CustomSpeedEnabled then
+                if LP.Character and LP.Character:FindFirstChildOfClass("Humanoid") then
+                    LP.Character.Humanoid.WalkSpeed = WhizConfig.WalkSpeed
+                end
+            end
+        end)
+
+        if WhizConfig.EspActive then
+            pcall(function()
+                for _, o in pairs(workspace:GetChildren()) do
+                    if o:IsA("Model") and not Players:GetPlayerFromCharacter(o) then
+                        if o:FindFirstChildOfClass("Humanoid") then
+                            if not o:FindFirstChild("ESPBolt") then
+                                local f = Instance.new("Folder", o); f.Name = "ESPBolt"
+                                local b = Instance.new("BillboardGui", f)
+                                b.Adornee = o:FindFirstChild("HumanoidRootPart")
+                                b.Size = UDim2.new(4, 0, 5.5, 0); b.AlwaysOnTop = true
+                                local fr = Instance.new("Frame", b)
+                                fr.Size = UDim2.new(1, 0, 1, 0); fr.BackgroundTransparency = 1
+                                local st = Instance.new("UIStroke", fr)
+                                st.Color = WhizConfig.BoxColor; st.Thickness = 1
+                                task.spawn(function()
+                                    while o.Parent and WhizConfig.EspActive do task.wait(1) end
+                                    if f then f:Destroy() end
+                                end)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+
+        if WhizConfig.DogtagEsp then
+            scanDogtags()
+            pcall(function()
+                for prompt, model in pairs(dogtagPrompts) do
+                    if not prompt or not prompt.Parent or prompt.Enabled == false then
+                        destroyCorpseEsp(model)
+                        dogtagPrompts[prompt] = nil
+                    end
+                end
+            end)
+            pcall(function()
+                for model, hl in pairs(dogtagHighlights) do
+                    if not model or not model.Parent then
+                        pcall(function() hl:Destroy() end)
+                        dogtagHighlights[model] = nil
+                    end
+                end
+            end)
+        end
+
+        if WhizConfig.DecryptedEsp then
+            scanDecrypted()
+            pcall(function()
+                for target, _ in pairs(decryptedEspData) do
+                    if not target or not target.Parent then
+                        destroyDecryptedEsp(target)
+                    end
+                end
+            end)
+        end
+
+        task.wait(1)
+    end
+end)
+
+Window:LoadAutoConfig()
